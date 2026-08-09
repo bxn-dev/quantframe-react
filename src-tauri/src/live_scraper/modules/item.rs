@@ -127,9 +127,11 @@ impl ItemModule {
         self.process_items(interesting_items, &app).await?;
         Ok(())
     }
+
     fn should_stop(client: &LiveScraperState, app: &AppState) -> bool {
         !client.is_running.load(Ordering::SeqCst) || app.user.is_banned()
     }
+
     /// Processes a list of interesting items, applying buying, selling, syndicate, and wishlist logic as configured in the settings.
     async fn process_items(
         &self,
@@ -289,21 +291,21 @@ impl ItemModule {
 
             // Process syndicate logic (future expansion) DISABLED FOR NOW WIP
             if item_entry.operations.has("Syndicate") {
-                // if let Err(e) = self
-                //     .progress_syndicate(&item_info, item_entry, &item_price, &orders)
-                //     .await
-                // {
-                //     return Err(e.with_location(get_location!()));
-                // }
+                if let Err(e) = self
+                    .progress_syndicate(&item_info, item_entry, &item_price, &orders)
+                    .await
+                {
+                    return Err(e.with_location(get_location!()));
+                }
 
-                // info(
-                //     &comp("ProgressSyndicate"),
-                //     &format!(
-                //         "Successfully processed syndicate for item: {}",
-                //         item_entry.wfm_url
-                //     ),
-                //     &LoggerOptions::default(),
-                // );
+                info(
+                    &comp("ProgressSyndicate"),
+                    &format!(
+                        "Successfully processed syndicate for item: {}",
+                        item_entry.wfm_url
+                    ),
+                    &LoggerOptions::default(),
+                );
             }
             current_index += 1;
         }
@@ -655,20 +657,25 @@ impl ItemModule {
         ));
 
         // Hidden + inactive → nothing to do; hidden + active → deactivate and delete order
-        if stock_item.is_hidden && stock_item.status == StockStatus::InActive {
+        if stock_item.is_hidden {
+            if stock_item.status == StockStatus::InActive {
+                log(&format!(
+                    "Item {} is hidden and already inactive. Skipping.",
+                    item_info.name
+                ));
+
+                return Ok(());
+            }
+
             log(&format!(
-                "Item {} is marked as hidden and inactive. Skipping.",
+                "Item {} is hidden and active. Deactivating and deleting order.",
                 item_info.name
             ));
-            return Ok(());
-        } else if stock_item.is_hidden && stock_item.status != StockStatus::InActive {
-            log(&format!(
-                "Item {} is hidden and active. Setting to inactive and deleting order.",
-                item_info.name
-            ));
+
             stock_item.set_status(StockStatus::InActive);
             stock_item.set_list_price(None);
             stock_item.locked = true;
+
             trade_operations.add("Delete");
         }
 
@@ -930,9 +937,6 @@ impl ItemModule {
             trade_operations.add("MinPrice");
         }
 
-        // Warframe Market prices cannot be below 1 platinum.
-        post_price = post_price.max(1);
-
         // Update the wishlist with the calculated price and state.
         wishlist_item.set_list_price(Some(post_price));
         wishlist_item.set_status(StockStatus::Live);
@@ -944,6 +948,9 @@ impl ItemModule {
                 post_price,
             ));
         }
+
+        // Warframe Market prices cannot be below 1 platinum.
+        post_price = post_price.max(1);
 
         // Log a summary of the calculated state before progressing the order.
         log_summary(
@@ -1018,16 +1025,16 @@ impl ItemModule {
         price: &ItemPriceInfo,
         live_orders: &OrderList<OrderWithUser>,
     ) -> Result<(), Error> {
-        let component = comp("Syndicate:");
-        let log_options = LoggerOptions::default();
-        let settings = states::get_settings()?.live_scraper;
-        let syndicate_settings = &settings.syndicate;
-        let wfm_client = states::app_state()?.wfm_client;
+        let conn = DATABASE.get().unwrap();
+        let log_options = &LoggerOptions::default();
+        let component = comp("Syndicate");
+        let settings = states::get_settings()?.live_scraper.items;
+        let syndicate_settings = states::get_settings()?.live_scraper.syndicate;
 
         let log = |msg: &str| info(&component, msg, &log_options);
 
-        // Skip items that are not allowed to be sold.
-        if is_blacklisted(&settings.items, item_info, entry, &TradeMode::Syndicate) {
+        // Skip if item is blacklisted for syndicate selling
+        if is_blacklisted(&settings, item_info, entry, &TradeMode::Syndicate) {
             log(&format!(
                 "Item {} is blacklisted for syndicate selling. Skipping.",
                 item_info.name
@@ -1035,18 +1042,68 @@ impl ItemModule {
             return Ok(());
         }
 
-        let market = &entry.sell_market_info;
+        // Get the Warframe Market client from the application state
+        let wfm_client = states::app_state()?.wfm_client;
+
+        // Get the per-trade quantity for this item, based on its type and settings
         let per_trade = get_per_trade(item_info);
 
-        // Retrieve the current order state and metadata.
-        let (_, current_order_price, mut properties, mut trade_operations) =
+        // Get the current market snapshot for this item's sell orders
+        let mut stock_syndicate = entry.get_syndicate_item_or_error(conn).await?;
+        let market_info = &entry.sell_market_info;
+
+        // Fetch existing order details and prepare mutable state
+        let (order_id, current_order_price, mut properties, mut trade_operations) =
             get_order_info(entry, OrderType::Sell, &wfm_client);
 
-        // Merge any existing properties from the entry into the order properties.
-        properties.merge_properties(entry.properties.properties.clone(), true, true);
+        // Per-item overrides stored on the stock item (optional)
+        let min_price = stock_syndicate
+            .properties
+            .get_property_value("min_price", None::<i64>);
+
+        // Check if the user has sufficient standing to post this syndicate item
+        let insufficient_standing = !syndicate_settings.wts.can_afford_posting(
+            &stock_syndicate.syndicate_unique_name,
+            stock_syndicate.standing_cost,
+        )?;
+
+        // Check if the item can be posted based on syndicate restrictions
+        if insufficient_standing {
+            if stock_syndicate.status == StockStatus::InsufficientStanding && order_id.is_empty() {
+                log(&format!(
+                    "Item {} cannot be posted due to insufficient standing. Skipping.",
+                    item_info.name
+                ));
+                return Ok(());
+            }
+
+            log(&format!(
+                "Item {} is active but cannot be posted due to insufficient standing. Deactivating and deleting order.",
+                item_info.name
+            ));
+
+            stock_syndicate.set_status(StockStatus::InsufficientStanding);
+            stock_syndicate.set_list_price(None);
+            stock_syndicate.locked = true;
+
+            trade_operations.add("Delete");
+        }
 
         // Start by matching the lowest active market price.
-        let mut post_price = market.lowest_price;
+        let mut post_price = market_info.lowest_price;
+
+        // Clamp to per-item minimum price if set
+        if let Some(min_price) = min_price {
+            let capped_price = post_price.max(min_price);
+            if capped_price != post_price {
+                log(&format!(
+                    "Item {} price capped to minimum price {}.",
+                    item_info.name, capped_price
+                ));
+                post_price = capped_price;
+                trade_operations.add("MinimumPrice");
+            }
+        }
 
         // Prevent large price drops that would undercut the existing order too aggressively.
         if let Some(reason) = should_apply_max_price_drop(
@@ -1061,7 +1118,6 @@ impl ItemModule {
                 "Item {} max price drop applied ({}).",
                 item_info.name, reason
             ));
-
             post_price = current_order_price;
             trade_operations.add(reason);
         }
@@ -1069,23 +1125,33 @@ impl ItemModule {
         // Warframe Market prices cannot be below 1 platinum.
         post_price = post_price.max(1);
 
+        // Persist final price, mark as live, and record price history
+        stock_syndicate.set_list_price(Some(post_price));
+        stock_syndicate.set_status(StockStatus::Live);
+        stock_syndicate.add_price_history(PriceHistory::new(
+            chrono::Local::now().naive_local().to_string(),
+            post_price,
+        ));
+
         // Log the calculated order state before submitting it.
         log_summary(
             &component,
             format!(
                 "Item {} | Post: {} | CurOrder: {} \
                  | Market: {} \
-                 | Price: Avg: {} | Min: {} | Max: {} | MovingAvg: {} | Median: {} \
+                 | Price: Avg: {} | Min: {} | Max: {} \
+                 | Syndicate: {} | StandingCost: {} | Status: {:?} \
                  | Ops: {:?}",
                 item_info.name,
                 post_price,
                 current_order_price,
-                market,
+                market_info,
                 price.avg_price,
                 price.min_price,
                 price.max_price,
-                price.moving_avg.unwrap_or(0.0),
-                price.median,
+                stock_syndicate.syndicate_name,
+                stock_syndicate.standing_cost,
+                stock_syndicate.status,
                 trade_operations.operations,
             ),
             &log_options,
@@ -1122,6 +1188,10 @@ impl ItemModule {
                 .with_context(entry.to_json())
         })?;
 
+        // Flush stock-item changes to the database
+        entry
+            .finalize_stock_syndicate_item(conn, &component, &mut stock_syndicate, log_options)
+            .await?;
         Ok(())
     }
 }

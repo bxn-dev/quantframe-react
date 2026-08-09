@@ -21,6 +21,7 @@ import { RivenModule } from "./riven";
 import { SoundModule } from "./sound";
 import { StockItemModule } from "./stack_item";
 import { StockRivenModule } from "./stack_riven";
+import { SyndicateItemModule } from "./syndicate_item";
 import { SyndicateModule } from "./syndicate";
 import { TradeEntryModule } from "./trade_entry";
 import { TransactionModule } from "./transaction";
@@ -46,6 +47,7 @@ export class TauriClient {
     this.log = new LogModule(this);
     this.stock_item = new StockItemModule(this);
     this.stock_riven = new StockRivenModule(this);
+    this.syndicate_item = new SyndicateItemModule(this);
     this.wish_list = new WishListModule(this);
     this.debug = new DebugModule(this);
     this.order = new OrderModule(this);
@@ -194,6 +196,7 @@ export class TauriClient {
   live_scraper: LiveScraperModule;
   stock_item: StockItemModule;
   stock_riven: StockRivenModule;
+  syndicate_item: SyndicateItemModule;
   wish_list: WishListModule;
   debug: DebugModule;
   chat: ChatModule;

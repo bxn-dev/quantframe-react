@@ -26,6 +26,8 @@ pub enum StockStatus {
     Underpriced,
     #[sea_orm(string_value = "max_price_drop")]
     MaxPriceDrop,
+    #[sea_orm(string_value = "insufficient_standing")]
+    InsufficientStanding,
 }
 impl StockStatus {
     // Create method to convert `OrderType` to a `&str`
@@ -42,6 +44,7 @@ impl StockStatus {
             StockStatus::Overpriced => "overpriced",
             StockStatus::Underpriced => "underpriced",
             StockStatus::MaxPriceDrop => "max_price_drop",
+            StockStatus::InsufficientStanding => "insufficient_standing",
         }
     }
     pub fn to_string(&self) -> String {
@@ -57,6 +60,9 @@ impl StockStatus {
             StockStatus::Overpriced => StockStatus::Overpriced.as_str().to_string(),
             StockStatus::Underpriced => StockStatus::Underpriced.as_str().to_string(),
             StockStatus::MaxPriceDrop => StockStatus::MaxPriceDrop.as_str().to_string(),
+            StockStatus::InsufficientStanding => {
+                StockStatus::InsufficientStanding.as_str().to_string()
+            }
         }
     }
     pub fn from_string(s: &str) -> StockStatus {
@@ -72,6 +78,7 @@ impl StockStatus {
             "overpriced" => StockStatus::Overpriced,
             "underpriced" => StockStatus::Underpriced,
             "max_price_drop" => StockStatus::MaxPriceDrop,
+            "insufficient_standing" => StockStatus::InsufficientStanding,
             _ => StockStatus::Pending,
         }
     }
@@ -93,6 +100,7 @@ impl Serialize for StockStatus {
             StockStatus::Overpriced => StockStatus::Overpriced.as_str(),
             StockStatus::Underpriced => StockStatus::Underpriced.as_str(),
             StockStatus::MaxPriceDrop => StockStatus::MaxPriceDrop.as_str(),
+            StockStatus::InsufficientStanding => StockStatus::InsufficientStanding.as_str(),
         };
         serializer.serialize_str(value)
     }
@@ -116,6 +124,7 @@ impl<'de> Deserialize<'de> for StockStatus {
             "overpriced" => StockStatus::Overpriced,
             "underpriced" => StockStatus::Underpriced,
             "max_price_drop" => StockStatus::MaxPriceDrop,
+            "insufficient_standing" => StockStatus::InsufficientStanding,
             _ => StockStatus::Pending,
         })
     }
