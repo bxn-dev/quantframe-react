@@ -1,8 +1,8 @@
 ## Features
 
-## Fixes
+✨ Added a minimum profit threshold logic to the live scraper, allowing users to set a minimum profit percentage or flat profit amount for their trades.
 
-- 🛠️ Enforced a minimum post price of 1 platinum in the live scraper since Warframe Market prices cannot go below 1.
+## Fixes
 
 ## Refactors
 
