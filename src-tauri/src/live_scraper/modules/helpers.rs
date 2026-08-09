@@ -786,3 +786,11 @@ pub fn should_apply_max_price_drop(
         None
     }
 }
+
+pub fn minimum_profit_threshold(bought_price: i64, flat_profit: i64, percentage: i64) -> i64 {
+    if is_disabled(percentage) {
+        flat_profit
+    } else {
+        flat_profit.max(bought_price.saturating_mul(percentage).saturating_add(99) / 100)
+    }
+}

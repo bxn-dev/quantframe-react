@@ -752,9 +752,14 @@ impl ItemModule {
             stock_item.locked = true;
         }
 
-        // Ensure profit meets the minimum threshold by raising the price if needed
+        // Ensure profit meets the flat or percentage threshold by raising the price if needed
         let mut profit = post_price - bought_price;
-        let minimum_profit = min_profit.unwrap_or(settings.wts.min_profit);
+        let flat_minimum_profit = min_profit.unwrap_or(settings.wts.min_profit);
+        let minimum_profit = minimum_profit_threshold(
+            bought_price,
+            flat_minimum_profit,
+            settings.wts.min_profit_percentage,
+        );
 
         if !is_disabled(minimum_profit) && profit < minimum_profit {
             let adjustment = minimum_profit - profit;
