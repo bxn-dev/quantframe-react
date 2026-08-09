@@ -1644,6 +1644,35 @@
                 "export_logs": "Log Export",
                 "clean_notifications": "Clean Notifications"
               }
+            },
+            "wf_inventory": {
+              "title": "WF Inventory",
+              "fields": {
+                "source": {
+                  "label": "Source",
+                  "description": "Which source to load the inventory from",
+                  "options": {
+                    "none": "None",
+                    "profile": "Profile",
+                    "alecaframe": "Alecaframe"
+                  }
+                },
+                "player_id": {
+                  "label": "Player ID",
+                  "placeholder": "Warframe account player ID",
+                  "tooltip": "Your Warframe account ID used to fetch the profile from api.warframe.com"
+                },
+                "path": {
+                  "label": "Path",
+                  "placeholder": "Path to the AlecaFrame lastData.dat file",
+                  "tooltip": "Leave empty to use the default AlecaFrame data file path"
+                }
+              },
+              "buttons": {
+                "update": "Refresh Inventory",
+                "update_success": "Inventory updated",
+                "update_error": "Failed to update inventory"
+              }
             }
           }
         }

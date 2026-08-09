@@ -1,9 +1,9 @@
 use entity::stock_riven::RivenAttribute;
 use serde::{Deserialize, Serialize};
-use utils::{get_location, Error};
+use utils::{get_location, Error, SubType};
 
 use crate::{
-    cache::CacheState,
+    cache::{lookup_riven_multipliers, normalize_weapon_unique_name, CacheState},
     types::ItemRivenBase,
     wf_inventory::*,
 };
@@ -107,7 +107,11 @@ impl WFInvItemRiven {
 
         Ok(())
     }
-    fn populate_pre_veiled(&mut self, _raw: &WFInvItemRaw, _cache: &CacheState) -> Result<(), Error> {
+    fn populate_pre_veiled(
+        &mut self,
+        _raw: &WFInvItemRaw,
+        _cache: &CacheState,
+    ) -> Result<(), Error> {
         // let mod_data = cache.mods().get(raw.unique_name.clone())?;
 
         // self.base.name = mod_data.name.clone();
@@ -127,20 +131,20 @@ impl WFInvItemRiven {
     }
     fn populate_veiled(
         &mut self,
-        _raw: &WFInvItemRaw,
-        _fingerprint: &UpgradeFingerprint,
-        _cache: &CacheState,
+        raw: &WFInvItemRaw,
+        fingerprint: &UpgradeFingerprint,
+        cache: &CacheState,
     ) -> Result<(), Error> {
-        // let riven_cache = cache.riven();
+        // let weapon_cache = cache.weapon();
 
         // let weapon_key = normalize_weapon_unique_name(fingerprint.compatibility.clone());
 
-        // let weapon = riven_cache
-        //     .get_weapon_by(&weapon_key)
+        // let weapon = weapon_cache
+        //     .get_by(&weapon_key)
         //     .map_err(|e| e.with_location(get_location!()))?;
 
         // self.base.name = weapon.name.clone();
-        // self.base.wfm_url = weapon.wfm_url_name.clone();
+        // self.base.wfm_url = weapon.wfm_riven_url.clone();
         // self.base.unique_name = raw.unique_name.clone();
         // self.base.sub_type = Some(SubType::rank(fingerprint.mod_rank));
         // self.base
@@ -151,7 +155,7 @@ impl WFInvItemRiven {
         // let multipliers = lookup_riven_multipliers(buffs_total, curses_total)?;
 
         // self.base.attributes = build_riven_attributes_from_fingerprint(
-        //     &riven_cache,
+        //     &weapon_cache,
         //     &weapon,
         //     fingerprint,
         //     multipliers,

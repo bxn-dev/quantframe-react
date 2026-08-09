@@ -111,7 +111,14 @@ export namespace TauriTypes {
     delete_conflicting_orders: boolean;
   }
   export interface WFInventorySettings {
-    inv_path: string;
+    source: WFInventorySource;
+  }
+  export type WFInventorySource = "None" | { Profile: WFInvProfileSource } | { Alecaframe: WFInvAlecaframeSource };
+  export interface WFInvProfileSource {
+    id: string;
+  }
+  export interface WFInvAlecaframeSource {
+    path: string;
   }
   export interface LogSettings {
     ee_log_path: string;
@@ -904,6 +911,15 @@ export namespace TauriTypes {
       required?: number;
       progress?: number;
       price?: number;
+    }>[];
+  };
+  export type WFInvSyndicateControllerGetListData = PaginatedDto & {
+    results?: WFInvItemBase<{
+      background_colour: string;
+      colour: string;
+      max_standing: number;
+      min_standing: number;
+      total: number;
     }>[];
   };
 
