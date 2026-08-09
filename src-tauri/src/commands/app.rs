@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     app::{AppState, Settings},
     log_parser::LogParserState,
+    wf_inventory::{InventorySource, WFInventoryState},
     APP, HAS_STARTED,
 };
 use serde_json::{json, Value};
@@ -47,6 +48,7 @@ pub async fn app_update_settings(
     mut settings: Settings,
     app: tauri::State<'_, Mutex<AppState>>,
     log_parser: tauri::State<'_, Mutex<Arc<LogParserState>>>,
+    wf_inventory: tauri::State<'_, Mutex<Arc<WFInventoryState>>>,
 ) -> Result<Settings, Error> {
     let mut app = app.lock()?;
     settings.notifications.custom_sounds = app.settings.notifications.custom_sounds.clone();
@@ -68,6 +70,15 @@ pub async fn app_update_settings(
             _ => {}
         }
     }
+
+    settings.wf_inventory.source.validate()?;
+
+    let current_wf_source = app.settings.wf_inventory.source.clone();
+    if settings.wf_inventory.source != current_wf_source {
+        let wf_inventory = wf_inventory.lock()?;
+        wf_inventory.set_source(settings.wf_inventory.source.clone());
+    }
+
     app.update_settings(settings.clone())?;
     Ok(settings.clone())
 }

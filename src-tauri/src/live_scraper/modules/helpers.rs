@@ -8,6 +8,7 @@ use std::{
 use entity::{
     dto::{add_price_history, PriceHistory},
     stock_item::*,
+    syndicate_item::SyndicateItemPaginationQueryDto,
     wish_list::*,
 };
 use qf_api::types::{SyndicateItemPrice, SyndicateItemPricePaginationQueryDto};
@@ -36,80 +37,81 @@ pub fn is_disabled(value: i64) -> bool {
     value <= -1
 }
 
-pub async fn get_syndicate_interesting_items(
-    app: &AppState,
-    settings: &SyndicateSettings,
-) -> Result<Vec<SyndicateItemPrice>, Error> {
-    let items = match app
-        .qf_client
-        .syndicate()
-        .get_prices(SyndicateItemPricePaginationQueryDto::new(1, -1))
-        .await
-    {
-        Ok(items) => items.results,
-        Err(e) => {
-            return Err(Error::from_qf(
-                "SyndicateModule:InterestingItems",
-                "Failed to get syndicate items",
-                e,
-                get_location!(),
-            ));
-        }
-    };
+// pub async fn get_syndicate_interesting_items(
+//     app: &AppState,
+//     settings: &SyndicateSettings,
+// ) -> Result<Vec<SyndicateItemPrice>, Error> {
+//     let items = match app
+//         .qf_client
+//         .syndicate()
+//         .get_prices(SyndicateItemPricePaginationQueryDto::new(1, -1))
+//         .await
+//     {
+//         Ok(items) => items.results,
+//         Err(e) => {
+//             return Err(Error::from_qf(
+//                 "SyndicateModule:InterestingItems",
+//                 "Failed to get syndicate items",
+//                 e,
+//                 get_location!(),
+//             ));
+//         }
+//     };
 
-    // Dynamic filter using closures
-    let volume_filter = |item: &SyndicateItemPrice| {
-        is_disabled(settings.wts.volume_threshold)
-            || item.volume > settings.wts.volume_threshold as f64
-    };
-    let standing_cost_filter = |item: &SyndicateItemPrice| {
-        is_disabled(settings.wts.max_standing_cost)
-            || item.standing_cost <= settings.wts.max_standing_cost
-    };
-    let types = |item: &SyndicateItemPrice| {
-        if item.sub_type.is_none() || item.sub_type.clone().unwrap().rank.is_none() {
-            return true;
-        }
-        let types = &settings.wts.max_rank_for_type;
-        let sub_type = item.sub_type.as_ref().unwrap();
-        let rank = sub_type.rank.unwrap_or(0);
+//     // Dynamic filter using closures
+//     let volume_filter = |item: &SyndicateItemPrice| {
+//         is_disabled(settings.wts.volume_threshold)
+//             || item.volume > settings.wts.volume_threshold as f64
+//     };
+//     let standing_cost_filter = |item: &SyndicateItemPrice| {
+//         is_disabled(settings.wts.max_standing_cost)
+//             || item.standing_cost <= settings.wts.max_standing_cost
+//     };
+//     let types = |item: &SyndicateItemPrice| {
+//         if item.sub_type.is_none() || item.sub_type.clone().unwrap().rank.is_none() {
+//             return true;
+//         }
+//         let types = &settings.wts.max_rank_for_type;
+//         let sub_type = item.sub_type.as_ref().unwrap();
+//         let rank = sub_type.rank.unwrap_or(0);
 
-        if types.contains(&String::from("mod"))
-            || types.contains(&String::from("arcane_enhancement"))
-        {
-            rank > 0
-        } else {
-            rank <= 0
-        }
-    };
+//         if types.contains(&String::from("mod"))
+//             || types.contains(&String::from("arcane_enhancement"))
+//         {
+//             rank > 0
+//         } else {
+//             rank <= 0
+//         }
+//     };
 
-    let syndicates = |item: &SyndicateItemPrice| {
-        let syndicates = &settings.wts.syndicates;
-        if syndicates.is_empty() {
-            return true;
-        }
-        syndicates.contains(&item.syndicate_unique_name)
-    };
-    let min_price = |item: &SyndicateItemPrice| {
-        is_disabled(settings.wts.min_price) || item.min_price <= settings.wts.min_price as f64
-    };
+//     let syndicates = |item: &SyndicateItemPrice| {
+//         let syndicates = &settings.wts.syndicates;
+//         if syndicates.is_empty() {
+//             return true;
+//         }
+//         // syndicates.contains(&item.syndicate_unique_name)
+//         true
+//     };
+//     let min_price = |item: &SyndicateItemPrice| {
+//         is_disabled(settings.wts.min_price) || item.min_price <= settings.wts.min_price as f64
+//     };
 
-    let combined_filter = |item: &SyndicateItemPrice| {
-        volume_filter(item)
-            && standing_cost_filter(item)
-            && types(item)
-            && min_price(item)
-            && syndicates(item)
-    };
+//     let combined_filter = |item: &SyndicateItemPrice| {
+//         volume_filter(item)
+//             && standing_cost_filter(item)
+//             && types(item)
+//             && min_price(item)
+//             && syndicates(item)
+//     };
 
-    // Filter items based on settings
-    let filtered_items: Vec<SyndicateItemPrice> = items
-        .into_iter()
-        .filter(|item| combined_filter(item))
-        .collect();
+//     // Filter items based on settings
+//     let filtered_items: Vec<SyndicateItemPrice> = items
+//         .into_iter()
+//         .filter(|item| combined_filter(item))
+//         .collect();
 
-    Ok(filtered_items)
-}
+//     Ok(filtered_items)
+// }
 pub fn get_interesting_items(settings: &ItemSettings) -> Vec<ItemPriceInfo> {
     if let Some(items) = INTERESTING_ITEMS.get() {
         if let Some(interesting_items) = items.get(&settings.get_query_id()) {
@@ -312,30 +314,44 @@ pub async fn collect_interesting_items(
 
     // --- Syndicate Mode --- Disabled for now, WIP
     if settings.live_scraper.has_trade_mode(TradeMode::Syndicate) {
-        return Ok(interesting_items.into_values().collect());
         let Ok(_) = app
             .user
             .has_permission(PermissionsFlags::from_str("syndicate_prices_search"))
         else {
             return Ok(interesting_items.into_values().collect());
         };
-
-        let items = get_syndicate_interesting_items(&app, &settings.live_scraper.syndicate)
+        let items = SyndicateItemQuery::get_all(conn, SyndicateItemPaginationQueryDto::new(1, -1))
             .await
             .map_err(|e| e.with_location(get_location!()))?;
-
-        for item in items.into_iter().filter(|item| {
-            !stock_item_settings.general.is_item_blacklisted(
-                &item.wfm_id,
-                &item.sub_type,
-                &TradeMode::Syndicate,
-            )
-        }) {
+        for item in items.results {
             interesting_items
-                .entry(item.uuid.clone())
-                .and_modify(|entry| entry.operations.add("Syndicate".to_string()))
-                .or_insert_with(|| ItemEntry::from(&item));
+                .entry(item.uuid())
+                .and_modify(|entry| {
+                    if entry.sell_quantity == 0 {
+                        entry.sell_quantity = 1;
+                    }
+                    entry.syndicate_id = Some(item.id);
+                    entry.operations.add("Syndicate".to_string());
+                })
+                .or_insert_with(|| ItemEntry::from(&item).set_quantity(OrderType::Sell, 1));
         }
+
+        // let items = get_syndicate_interesting_items(&app, &settings.live_scraper.syndicate)
+        //     .await
+        //     .map_err(|e| e.with_location(get_location!()))?;
+
+        // for item in items.into_iter().filter(|item| {
+        //     !stock_item_settings.general.is_item_blacklisted(
+        //         &item.wfm_id,
+        //         &item.sub_type,
+        //         &TradeMode::Syndicate,
+        //     )
+        // }) {
+        //     interesting_items
+        //         .entry(item.uuid.clone())
+        //         .and_modify(|entry| entry.operations.add("Syndicate".to_string()))
+        //         .or_insert_with(|| ItemEntry::from(&item));
+        // }
     }
     Ok(interesting_items.into_values().collect())
 }
@@ -654,7 +670,7 @@ pub async fn progress_order(
     } else {
         warning(
             format!("{}Skip", component),
-            &format!("Item {} is not optimal for buying. Skipping.", name),
+            &format!("Item {} has no trade operations. Skipping.", name),
             &log_options,
         );
     }

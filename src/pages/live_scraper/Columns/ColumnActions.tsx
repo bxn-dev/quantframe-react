@@ -4,7 +4,7 @@ import { ActionWithTooltip } from "@components/Shared/ActionWithTooltip";
 import { useTranslateCommon } from "@hooks/useTranslate.hook";
 export type ColumnActionsProps = {
   i18nKeyOverride?: Record<string, string>;
-  row: { id: number; list_price?: number | undefined; is_hidden: boolean };
+  row: { id: number; list_price?: number | undefined; is_hidden?: boolean };
   loadingRows: string[];
   hideButtons?: string[];
   buttonProps?: { [key: string]: any };
@@ -12,7 +12,7 @@ export type ColumnActionsProps = {
   onAuto: (price: number) => void;
   onInfo: () => void;
   onFilter?: () => void;
-  onHide: (hide: boolean) => void;
+  onHide?: (hide: boolean) => void;
   onDelete: (id: number) => void;
   onEdit?: (id: number) => void;
 };
@@ -107,18 +107,20 @@ export function ColumnActions({
           }}
         />
       )}
-      <ActionWithTooltip
-        tooltip={useTranslateButtons(`hide.${row.is_hidden ? "disabled_tooltip" : "enabled_tooltip"}`)}
-        icon={row.is_hidden ? faEyeSlash : faEye}
-        loading={loadingRows.includes(`${row.id}`)}
-        color={`${row.is_hidden ? "red.7" : "green.7"}`}
-        actionProps={{ size: "sm" }}
-        iconProps={{ size: "xs" }}
-        onClick={async (e) => {
-          e.stopPropagation();
-          onHide(!row.is_hidden);
-        }}
-      />
+      {onHide && (
+        <ActionWithTooltip
+          tooltip={useTranslateButtons(`hide.${row.is_hidden ? "disabled_tooltip" : "enabled_tooltip"}`)}
+          icon={row.is_hidden ? faEyeSlash : faEye}
+          loading={loadingRows.includes(`${row.id}`)}
+          color={`${row.is_hidden ? "red.7" : "green.7"}`}
+          actionProps={{ size: "sm" }}
+          iconProps={{ size: "xs" }}
+          onClick={async (e) => {
+            e.stopPropagation();
+            onHide(!row.is_hidden);
+          }}
+        />
+      )}
       <ActionWithTooltip
         tooltip={useTranslateButtons("delete_tooltip")}
         color={"red.7"}

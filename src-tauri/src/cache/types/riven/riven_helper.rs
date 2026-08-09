@@ -4,7 +4,10 @@ use entity::{
 };
 use utils::{get_location, Error};
 
-use crate::cache::{types::*, CacheState};
+use crate::{
+    cache::{modules::WeaponModule, types::*, CacheState},
+    wf_inventory::UpgradeFingerprint,
+};
 
 const BASE_RIVEN: f64 = 90.0;
 const RIVEN_DENOM: f64 = 53687091.0;
@@ -85,7 +88,7 @@ pub fn build_riven_mod_name(attrs: &Vec<RivenAttribute>, buffs: usize) -> String
 // --------------------------------------------------
 
 // pub fn build_riven_attributes_from_fingerprint(
-//     cache: &RivenModule,
+//     cache: &WeaponModule,
 //     weapon: &CacheWeaponBase,
 //     fingerprint: &UpgradeFingerprint,
 //     multipliers: &Modifier,
