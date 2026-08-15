@@ -7,6 +7,7 @@
 ## Fixes
 
 - 🛠️ Fixed the unit price being recorded as the total trade price instead of the per-item unit price (closes #124).
+- 🛠️ Fixed a crash ("unexpected value for StockStatus enum") caused by stale status values in the database (e.g. `cooldown_price_change`); the stock status now falls back to `Unknown` instead of erroring.
 
 ## Refactors
 
