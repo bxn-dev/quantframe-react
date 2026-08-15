@@ -1,5 +1,5 @@
 use crate::{commands::item, handlers::*};
-use utils::{get_location, Error, OperationSet};
+use utils::{get_location, Error};
 
 #[tauri::command]
 pub async fn handles_handle_items(items: Vec<ItemEntity>) -> Result<i32, Error> {
@@ -35,25 +35,25 @@ pub async fn handles_handle_items(items: Vec<ItemEntity>) -> Result<i32, Error> 
             processed_items.push((o, updated_item.item_name));
         }
 
-        // match handle_item(
-        //     item.wfm_url,
-        //     item.sub_type,
-        //     item.quantity,
-        //     item.price,
-        //     item.user_name,
-        //     item.order_type,
-        //     item.operations,
-        // )
-        // .await
-        // {
-        //     Ok((o, updated_item)) => {
-        //         total += 1;
-        //         processed_items.push((o, updated_item.item_name));
-        //     }
-        //     Err(e) => {
-        //         return Err(e.with_location(get_location!()));
-        //     }
-        // }
+        match handle_item(
+            item.wfm_url,
+            item.sub_type,
+            item.quantity,
+            item.price,
+            item.user_name,
+            item.order_type,
+            &item.operations,
+        )
+        .await
+        {
+            Ok((o, updated_item)) => {
+                total += 1;
+                processed_items.push((o, updated_item.item_name));
+            }
+            Err(e) => {
+                return Err(e.with_location(get_location!()));
+            }
+        }
     }
     Ok(total)
 }

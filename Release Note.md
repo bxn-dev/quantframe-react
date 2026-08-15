@@ -10,6 +10,8 @@
 
 ## Refactors
 
+- ♻️ Reworked the live scraper's selling, wishlist, and syndicate pipelines so the order summary is only logged after a successful Warframe Market order update, and moved the "mark as live" persistence to run only on success.
+
 ## Dev Notes
 
 ## Icons

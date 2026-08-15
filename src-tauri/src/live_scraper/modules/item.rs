@@ -536,6 +536,19 @@ impl ItemModule {
         // Warframe Market prices cannot be below 1 platinum.
         post_price = post_price.max(1);
 
+        // Attach trade-operation metadata to the order properties
+        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
+
+        // Attach market-metrics metadata (volume, velocity, etc.)
+        set_order_market_metrics(
+            &mut properties,
+            post_price,
+            potential_profit,
+            price,
+            live_orders,
+            OrderType::Buy,
+        );
+
         log_summary(
             &component,
             format!(
@@ -561,20 +574,7 @@ impl ItemModule {
             ),
             log_options,
         );
-
-        // Attach trade-operation metadata to the order properties
-        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
-
-        // Attach market-metrics metadata (volume, velocity, etc.)
-        set_order_market_metrics(
-            &mut properties,
-            post_price,
-            potential_profit,
-            price,
-            live_orders,
-            OrderType::Buy,
-        );
-        // Submit the order to Warframe Market (create, update, or delete)
+        // Create, update, or remove the live market order.
         match progress_order(
             &component,
             entry,
@@ -775,25 +775,30 @@ impl ItemModule {
             profit = post_price - bought_price;
         }
 
-        // Persist final price, mark as live, and record price history
-        stock_item.set_list_price(Some(post_price));
-        stock_item.set_status(StockStatus::Live);
-        stock_item.add_price_history(PriceHistory::new(
-            chrono::Local::now().naive_local().to_string(),
-            post_price,
-        ));
-
         // Warframe Market prices cannot be below 1 platinum.
         post_price = post_price.max(1);
+
+        // Attach trade-operation metadata to the order properties
+        populate_order_properties(&mut properties, &item_info, &entry, &trade_operations);
+
+        // Attach market-metrics metadata (volume, velocity, etc.)
+        set_order_market_metrics(
+            &mut properties,
+            post_price,
+            profit,
+            price,
+            live_orders,
+            OrderType::Sell,
+        );
 
         log_summary(
             &component,
             format!(
                 "Item {} | Post: {} | CurOrder: {} | Lowest: {} | ClosedAvg: {} | Bought: {} | Profit: {} \
-                 | Market: {} \
-                 | Price: AVG: {} | Min: {} | Max: {} | Median: {} | WeekShift: {} \
-                 | MinSMA: {} | MinProfit: {} | MinPrice: {:?} \
-                 | Hidden: {} | Locked: {} | Status: {:?} | Ops: {:?}",
+                    | Market: {} \
+                    | Price: AVG: {} | Min: {} | Max: {} | Median: {} | WeekShift: {} \
+                    | MinSMA: {} | MinProfit: {} | MinPrice: {:?} \
+                    | Hidden: {} | Locked: {} | Status: {:?} | Ops: {:?}",
                 item_info.name,
                 post_price,
                 current_order_price,
@@ -818,20 +823,7 @@ impl ItemModule {
             log_options,
         );
 
-        // Attach trade-operation metadata to the order properties
-        populate_order_properties(&mut properties, &item_info, &entry, &trade_operations);
-
-        // Attach market-metrics metadata (volume, velocity, etc.)
-        set_order_market_metrics(
-            &mut properties,
-            post_price,
-            profit,
-            price,
-            live_orders,
-            OrderType::Sell,
-        );
-
-        // Submit the order to Warframe Market (create, update, or delete)
+        // Create, update, or remove the live market order.
         match progress_order(
             &component,
             entry,
@@ -845,8 +837,22 @@ impl ItemModule {
         )
         .await
         {
-            Ok(_) => {}
+            Ok(_) => {
+                stock_item.set_list_price(Some(post_price));
+                stock_item.set_status(StockStatus::Live);
+                stock_item.add_price_history(PriceHistory::new(
+                    chrono::Local::now().naive_local().to_string(),
+                    post_price,
+                ));
+            }
             Err(e) => {
+                stock_item.locked = false;
+                stock_item.set_status(StockStatus::Error);
+
+                let _ = entry
+                    .finalize_stock_item(conn, &component, &mut stock_item, log_options)
+                    .await;
+
                 return Err(e
                     .with_location(get_location!())
                     .with_context(entry.to_json()));
@@ -942,22 +948,23 @@ impl ItemModule {
             trade_operations.add("MinPrice");
         }
 
-        // Update the wishlist with the calculated price and state.
-        wishlist_item.set_list_price(Some(post_price));
-        wishlist_item.set_status(StockStatus::Live);
-
-        // Record the latest calculated price for historical tracking.
-        if wishlist_item.status == StockStatus::Live {
-            wishlist_item.add_price_history(PriceHistory::new(
-                chrono::Local::now().naive_local().to_string(),
-                post_price,
-            ));
-        }
-
         // Warframe Market prices cannot be below 1 platinum.
         post_price = post_price.max(1);
 
-        // Log a summary of the calculated state before progressing the order.
+        // Populate metadata used by the order manager.
+        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
+
+        // Store the latest market metrics alongside the order.
+        set_order_market_metrics(
+            &mut properties,
+            post_price,
+            0,
+            price,
+            live_orders,
+            OrderType::Buy,
+        );
+
+        // Log a summary of the calculated state after a successful order.
         log_summary(
             &component,
             format!(
@@ -983,21 +990,8 @@ impl ItemModule {
             &log_options,
         );
 
-        // Populate metadata used by the order manager.
-        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
-
-        // Store the latest market metrics alongside the order.
-        set_order_market_metrics(
-            &mut properties,
-            post_price,
-            0,
-            price,
-            live_orders,
-            OrderType::Buy,
-        );
-
         // Create, update, or remove the live market order.
-        progress_order(
+        match progress_order(
             &component,
             entry,
             &wfm_client,
@@ -1009,10 +1003,29 @@ impl ItemModule {
             &trade_operations,
         )
         .await
-        .map_err(|e| {
-            e.with_location(get_location!())
-                .with_context(entry.to_json())
-        })?;
+        {
+            Ok(_) => {
+                wishlist_item.set_list_price(Some(post_price));
+                wishlist_item.set_status(StockStatus::Live);
+                wishlist_item.add_price_history(PriceHistory::new(
+                    chrono::Local::now().naive_local().to_string(),
+                    post_price,
+                ));
+            }
+
+            Err(e) => {
+                wishlist_item.locked = false;
+                wishlist_item.set_status(StockStatus::Error);
+
+                let _ = entry
+                    .finalize_wishlist_item(conn, &component, &mut wishlist_item, &log_options)
+                    .await;
+
+                return Err(e
+                    .with_location(get_location!())
+                    .with_context(entry.to_json()));
+            }
+        }
 
         // Persist any changes made to the wishlist item.
         entry
@@ -1130,15 +1143,20 @@ impl ItemModule {
         // Warframe Market prices cannot be below 1 platinum.
         post_price = post_price.max(1);
 
-        // Persist final price, mark as live, and record price history
-        stock_syndicate.set_list_price(Some(post_price));
-        stock_syndicate.set_status(StockStatus::Live);
-        stock_syndicate.add_price_history(PriceHistory::new(
-            chrono::Local::now().naive_local().to_string(),
-            post_price,
-        ));
+        // Populate metadata used by the order manager.
+        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
 
-        // Log the calculated order state before submitting it.
+        // Store the latest market metrics alongside the order.
+        set_order_market_metrics(
+            &mut properties,
+            post_price,
+            post_price,
+            price,
+            live_orders,
+            OrderType::Sell,
+        );
+
+        // Log a summary of the calculated state after a successful order.
         log_summary(
             &component,
             format!(
@@ -1162,21 +1180,8 @@ impl ItemModule {
             &log_options,
         );
 
-        // Populate metadata used by the order manager.
-        populate_order_properties(&mut properties, item_info, entry, &trade_operations);
-
-        // Store the latest market metrics alongside the order.
-        set_order_market_metrics(
-            &mut properties,
-            post_price,
-            post_price,
-            price,
-            live_orders,
-            OrderType::Sell,
-        );
-
         // Create, update, or remove the live market order.
-        progress_order(
+        match progress_order(
             &component,
             entry,
             &wfm_client,
@@ -1188,10 +1193,34 @@ impl ItemModule {
             &trade_operations,
         )
         .await
-        .map_err(|e| {
-            e.with_location(get_location!())
-                .with_context(entry.to_json())
-        })?;
+        {
+            Ok(_) => {
+                stock_syndicate.set_list_price(Some(post_price));
+                stock_syndicate.set_status(StockStatus::Live);
+                stock_syndicate.add_price_history(PriceHistory::new(
+                    chrono::Local::now().naive_local().to_string(),
+                    post_price,
+                ));
+            }
+
+            Err(e) => {
+                stock_syndicate.locked = false;
+                stock_syndicate.set_status(StockStatus::Error);
+
+                let _ = entry
+                    .finalize_stock_syndicate_item(
+                        conn,
+                        &component,
+                        &mut stock_syndicate,
+                        log_options,
+                    )
+                    .await;
+
+                return Err(e
+                    .with_location(get_location!())
+                    .with_context(entry.to_json()));
+            }
+        }
 
         // Flush stock-item changes to the database
         entry
