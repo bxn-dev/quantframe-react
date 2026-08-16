@@ -65,7 +65,7 @@ impl ActiveEnum for StockStatus {
     }
 
     fn try_from_value(v: &Self::Value) -> Result<Self, DbErr> {
-        Ok(Self::from_str(v).unwrap_or(Self::Unknown))
+        Ok(Self::from_str(v))
     }
 
     fn db_type() -> ColumnDef {
@@ -84,7 +84,8 @@ impl sea_orm::TryGetable for StockStatus {
         res: &sea_orm::QueryResult,
         idx: I,
     ) -> std::result::Result<Self, sea_orm::TryGetError> {
-        let value = <<Self as sea_orm::ActiveEnum>::Value as sea_orm::TryGetable>::try_get_by(res, idx)?;
+        let value =
+            <<Self as sea_orm::ActiveEnum>::Value as sea_orm::TryGetable>::try_get_by(res, idx)?;
         <Self as sea_orm::ActiveEnum>::try_from_value(&value).map_err(sea_orm::TryGetError::DbErr)
     }
 }
@@ -93,8 +94,10 @@ impl sea_orm::sea_query::ValueType for StockStatus {
     fn try_from(
         v: sea_orm::sea_query::Value,
     ) -> std::result::Result<Self, sea_orm::sea_query::ValueTypeErr> {
-        let value = <<Self as sea_orm::ActiveEnum>::Value as sea_orm::sea_query::ValueType>::try_from(v)?;
-        <Self as sea_orm::ActiveEnum>::try_from_value(&value).map_err(|_| sea_orm::sea_query::ValueTypeErr)
+        let value =
+            <<Self as sea_orm::ActiveEnum>::Value as sea_orm::sea_query::ValueType>::try_from(v)?;
+        <Self as sea_orm::ActiveEnum>::try_from_value(&value)
+            .map_err(|_| sea_orm::sea_query::ValueTypeErr)
     }
 
     fn type_name() -> String {
@@ -139,23 +142,23 @@ impl StockStatus {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn from_str(value: &str) -> Self {
         match value {
-            "error" => Some(Self::Error),
-            "unknown" => Some(Self::Unknown),
-            "pending" => Some(Self::Pending),
-            "live" => Some(Self::Live),
-            "to_low_profit" => Some(Self::ToLowProfit),
-            "no_sellers" => Some(Self::NoSellers),
-            "no_buyers" => Some(Self::NoBuyers),
-            "inactive" => Some(Self::InActive),
-            "sma_limit" => Some(Self::SMALimit),
-            "order_limit" => Some(Self::OrderLimit),
-            "overpriced" => Some(Self::Overpriced),
-            "underpriced" => Some(Self::Underpriced),
-            "max_price_drop" => Some(Self::MaxPriceDrop),
-            "insufficient_standing" => Some(Self::InsufficientStanding),
-            _ => None,
+            "error" => Self::Error,
+            "unknown" => Self::Unknown,
+            "pending" => Self::Pending,
+            "live" => Self::Live,
+            "to_low_profit" => Self::ToLowProfit,
+            "no_sellers" => Self::NoSellers,
+            "no_buyers" => Self::NoBuyers,
+            "inactive" => Self::InActive,
+            "sma_limit" => Self::SMALimit,
+            "order_limit" => Self::OrderLimit,
+            "overpriced" => Self::Overpriced,
+            "underpriced" => Self::Underpriced,
+            "max_price_drop" => Self::MaxPriceDrop,
+            "insufficient_standing" => Self::InsufficientStanding,
+            _ => Self::Unknown,
         }
     }
 }
@@ -173,6 +176,6 @@ impl<'de> Deserialize<'de> for StockStatus {
     {
         let value = String::deserialize(deserializer)?;
 
-        Ok(Self::from_str(&value).unwrap_or(Self::Unknown))
+        Ok(Self::from_str(&value))
     }
 }

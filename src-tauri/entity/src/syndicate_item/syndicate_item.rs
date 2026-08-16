@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use utils::Properties;
 use utils::SubType;
 
-pub static ALLOWED_PROPERTIES_FIELDS: &[&str] = &["min_price", "max_rank"];
+pub static ALLOWED_PROPERTIES_FIELDS: &[&str] = &["min_price", "max_rank", "cooldown"];
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "syndicate_item")]
@@ -110,7 +110,7 @@ impl Model {
         }
         false
     }
-    fn add_change(&mut self, field: &str) {
+    pub fn add_change(&mut self, field: &str) {
         if !self.changes.contains(&field.to_string()) {
             self.changes.push(field.to_string());
         }
@@ -150,6 +150,13 @@ impl Model {
             uuid.push_str(&format!("-{}", sub_type.shot_display()));
         }
         uuid
+    }
+    pub fn set_properties(&mut self, properties: Properties) {
+        if self.properties != properties {
+            self.properties = properties;
+            self.is_dirty = true;
+            self.add_change("properties");
+        }
     }
     pub fn to_update(&self) -> UpdateSyndicateItem {
         UpdateSyndicateItem {

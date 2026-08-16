@@ -1,17 +1,20 @@
+use crate::live_scraper::types::cooldown::CooldownInfo;
 use std::{
     collections::HashMap,
     path::Path,
-    sync::{atomic::Ordering, OnceLock},
+    sync::{atomic::Ordering, Mutex, OnceLock},
+    time::Duration,
     vec,
 };
 
+use chrono::{DateTime, Utc};
 use entity::{
     dto::{add_price_history, PriceHistory},
+    enums::StockStatus,
     stock_item::*,
     syndicate_item::SyndicateItemPaginationQueryDto,
     wish_list::*,
 };
-use qf_api::types::{SyndicateItemPrice, SyndicateItemPricePaginationQueryDto};
 use serde_json::json;
 use service::*;
 use utils::*;
@@ -32,6 +35,11 @@ use crate::{
 };
 
 pub static INTERESTING_ITEMS: OnceLock<HashMap<String, Vec<ItemPriceInfo>>> = OnceLock::new();
+
+const ORDER_COOLDOWN_ENABLED: bool = false; // Set to true to enable order cooldowns, false to disable
+static ORDER_COOL_DOWNS: OnceLock<Mutex<HashMap<String, CooldownInfo>>> = OnceLock::new();
+const ORDER_SAME_PRICE_COOL_DOWN: Duration = Duration::from_secs(20 * 60);
+const ORDER_PRICE_CHANGE_COOL_DOWN: Duration = Duration::from_secs(5 * 60);
 
 pub fn is_disabled(value: i64) -> bool {
     value <= -1
@@ -302,6 +310,7 @@ pub fn get_order_info(
         let order = order.unwrap();
         let mut properties = order.properties;
         properties.set_property_value("id", order.id.clone());
+        properties.set_property_value("old_price", order.platinum);
         properties.set_property_value("original_update_string", format!("p:{}", order.platinum));
         (
             order.id.clone(),
@@ -466,6 +475,56 @@ async fn handler_wfm_error(
     err
 }
 
+pub fn get_cooldown(new: &Properties) -> CooldownInfo {
+    let current_cooldown = new.get_property_value("cooldown", CooldownInfo::default());
+    current_cooldown
+}
+pub fn set_cooldown(current: &mut Properties, new: &Properties) -> (bool, CooldownInfo) {
+    let current_cooldown = get_cooldown(current);
+    let new_cooldown = get_cooldown(new);
+    if current_cooldown.start_time != new_cooldown.start_time {
+        current.set_property_value("cooldown", new_cooldown.clone());
+        return (true, new_cooldown);
+    }
+    (false, current_cooldown)
+}
+fn is_order_on_cooldown(
+    order_id: impl Into<String>,
+    old_price: u32,
+    new_price: u32,
+) -> Option<CooldownInfo> {
+    if !ORDER_COOLDOWN_ENABLED {
+        return None;
+    }
+    let order_id = order_id.into();
+    let now = Utc::now();
+
+    let (cooldown_type, duration) = if old_price == new_price {
+        ("order_same_price", ORDER_SAME_PRICE_COOL_DOWN)
+    } else {
+        ("order_price_change", ORDER_PRICE_CHANGE_COOL_DOWN)
+    };
+    // Start a new cooldown
+    let cooldown = CooldownInfo::new(order_id, now, cooldown_type, duration);
+    let key = cooldown.key();
+
+    let cooldowns = ORDER_COOL_DOWNS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cooldowns = cooldowns.lock().unwrap();
+
+    // Check existing cooldown
+    if let Some(cooldown) = cooldowns.get(&key) {
+        if cooldown.remaining().is_some() {
+            return Some(cooldown.clone());
+        }
+
+        // Cooldown has expired
+        cooldowns.remove(&key);
+    }
+
+    cooldowns.insert(key, cooldown);
+
+    None
+}
 pub async fn progress_order(
     component: &str,
     entry: &ItemEntry,
@@ -481,6 +540,7 @@ pub async fn progress_order(
     let quantity = entry.get_quantity(order_type);
     // Fetch properties data
     let order_id = properties.get_property_value("id", String::new());
+    let old_price = properties.get_property_value("old_price", 0u32);
     let name = properties.get_property_value("name", String::new());
     let update_string = properties.get_property_value("update_string", String::new());
     let original_update_string =
@@ -526,6 +586,25 @@ pub async fn progress_order(
             }
         }
     } else if trade_operations.has("Update") && !trade_operations.has("Delete") {
+        if let Some(info) = is_order_on_cooldown(&order_id, old_price, post_price) {
+            properties.set_property_value("cooldown", info.clone());
+            wfm_client.order().cache_orders_mut().update(
+                order_id,
+                UpdateOrderParams::new().with_properties(json!(properties.properties)),
+            );
+            return Err(Error::new(
+                format!("{}:Cooldown", component),
+                format!(
+                    "Order for item {} is on cooldown ({}). Skipping update.",
+                    name,
+                    info.format_remaining()
+                ),
+                get_location!(),
+            )
+            .with_cause("CooldownError")
+            .with_context(json!({"cooldown": info})));
+        }
+
         match wfm_client
             .order()
             .update(
@@ -624,6 +703,7 @@ pub async fn delete_order(
 pub fn log_summary(component: &str, message: impl AsRef<str>, options: &LoggerOptions) {
     info(format!("{}Summary", component), message.as_ref(), options);
 }
+
 pub async fn fetch_and_cache_orders(
     component: &str,
     wfm_client: &wf_market::Client<wf_market::Authenticated>,

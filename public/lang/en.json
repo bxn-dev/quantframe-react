@@ -678,6 +678,10 @@
       "warning": "Warning",
       "error": "Error",
       "success": "Success"
+    },
+    "cooldown": {
+      "order_same_price": "Same Price Cooldown",
+      "order_price_change": "Price Change Cooldown"
     }
   },
   "context": {

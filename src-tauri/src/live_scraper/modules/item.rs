@@ -575,7 +575,7 @@ impl ItemModule {
             log_options,
         );
         // Create, update, or remove the live market order.
-        match progress_order(
+        if let Err(e) = progress_order(
             &component,
             entry,
             &wfm_client,
@@ -588,8 +588,14 @@ impl ItemModule {
         )
         .await
         {
-            Ok(_) => {}
-            Err(e) => {
+            if e.cause == "CooldownError" {
+                let cooldown_info = get_cooldown(&e.properties);
+                log(&format!(
+                    "Item {} is on cooldown ({}). Skipping update.",
+                    item_info.name,
+                    cooldown_info.format_remaining()
+                ));
+            } else {
                 return Err(e
                     .with_location(get_location!())
                     .with_context(entry.to_json()));
@@ -823,6 +829,9 @@ impl ItemModule {
             log_options,
         );
 
+        // If the item is not hidden and not locked, set its status to Live.
+        stock_item.set_status(StockStatus::Live);
+
         // Create, update, or remove the live market order.
         match progress_order(
             &component,
@@ -839,25 +848,31 @@ impl ItemModule {
         {
             Ok(_) => {
                 stock_item.set_list_price(Some(post_price));
-                stock_item.set_status(StockStatus::Live);
                 stock_item.add_price_history(PriceHistory::new(
                     chrono::Local::now().naive_local().to_string(),
                     post_price,
                 ));
             }
             Err(e) => {
-                stock_item.locked = false;
-                stock_item.set_status(StockStatus::Error);
-
-                let _ = entry
-                    .finalize_stock_item(conn, &component, &mut stock_item, log_options)
-                    .await;
-
-                return Err(e
-                    .with_location(get_location!())
-                    .with_context(entry.to_json()));
+                if e.cause == "CooldownError" {
+                    let (is_dirty, cooldown_info) =
+                        set_cooldown(&mut stock_item.properties, &e.properties);
+                    if is_dirty {
+                        stock_item.is_dirty = true;
+                        stock_item.add_change("cooldown");
+                    }
+                    log(&format!(
+                        "Item {} is on cooldown ({}). Skipping update.",
+                        item_info.name,
+                        cooldown_info.format_remaining()
+                    ));
+                } else {
+                    return Err(e
+                        .with_location(get_location!())
+                        .with_context(entry.to_json()));
+                }
             }
-        }
+        };
 
         // Flush stock-item changes to the database
         entry
@@ -990,6 +1005,9 @@ impl ItemModule {
             &log_options,
         );
 
+        // If the item is not hidden and not locked, set its status to Live.
+        wishlist_item.set_status(StockStatus::Live);
+
         // Create, update, or remove the live market order.
         match progress_order(
             &component,
@@ -1006,7 +1024,6 @@ impl ItemModule {
         {
             Ok(_) => {
                 wishlist_item.set_list_price(Some(post_price));
-                wishlist_item.set_status(StockStatus::Live);
                 wishlist_item.add_price_history(PriceHistory::new(
                     chrono::Local::now().naive_local().to_string(),
                     post_price,
@@ -1014,16 +1031,23 @@ impl ItemModule {
             }
 
             Err(e) => {
-                wishlist_item.locked = false;
-                wishlist_item.set_status(StockStatus::Error);
-
-                let _ = entry
-                    .finalize_wishlist_item(conn, &component, &mut wishlist_item, &log_options)
-                    .await;
-
-                return Err(e
-                    .with_location(get_location!())
-                    .with_context(entry.to_json()));
+                if e.cause == "CooldownError" {
+                    let (is_dirty, cooldown_info) =
+                        set_cooldown(&mut wishlist_item.properties, &e.properties);
+                    if is_dirty {
+                        wishlist_item.is_dirty = true;
+                        wishlist_item.add_change("cooldown");
+                    }
+                    log(&format!(
+                        "Item {} is on cooldown ({}). Skipping update.",
+                        item_info.name,
+                        cooldown_info.format_remaining()
+                    ));
+                } else {
+                    return Err(e
+                        .with_location(get_location!())
+                        .with_context(entry.to_json()));
+                }
             }
         }
 
@@ -1080,10 +1104,13 @@ impl ItemModule {
             .get_property_value("min_price", None::<i64>);
 
         // Check if the user has sufficient standing to post this syndicate item
-        let insufficient_standing = !syndicate_settings.wts.can_afford_posting(
+        let insufficient_standing = match syndicate_settings.wts.can_afford_posting(
             &stock_syndicate.syndicate_unique_name,
             stock_syndicate.standing_cost,
-        )?;
+        ) {
+            Ok(result) => result,
+            Err(_) => false,
+        };
 
         // Check if the item can be posted based on syndicate restrictions
         if insufficient_standing {
@@ -1180,6 +1207,9 @@ impl ItemModule {
             &log_options,
         );
 
+        // If the item is not hidden and not locked, set its status to Live.
+        stock_syndicate.set_status(StockStatus::Live);
+
         // Create, update, or remove the live market order.
         match progress_order(
             &component,
@@ -1196,7 +1226,6 @@ impl ItemModule {
         {
             Ok(_) => {
                 stock_syndicate.set_list_price(Some(post_price));
-                stock_syndicate.set_status(StockStatus::Live);
                 stock_syndicate.add_price_history(PriceHistory::new(
                     chrono::Local::now().naive_local().to_string(),
                     post_price,
@@ -1204,21 +1233,23 @@ impl ItemModule {
             }
 
             Err(e) => {
-                stock_syndicate.locked = false;
-                stock_syndicate.set_status(StockStatus::Error);
-
-                let _ = entry
-                    .finalize_stock_syndicate_item(
-                        conn,
-                        &component,
-                        &mut stock_syndicate,
-                        log_options,
-                    )
-                    .await;
-
-                return Err(e
-                    .with_location(get_location!())
-                    .with_context(entry.to_json()));
+                if e.cause == "CooldownError" {
+                    let (is_dirty, cooldown_info) =
+                        set_cooldown(&mut stock_syndicate.properties, &e.properties);
+                    if is_dirty {
+                        stock_syndicate.is_dirty = true;
+                        stock_syndicate.add_change("cooldown");
+                    }
+                    log(&format!(
+                        "Item {} is on cooldown ({}). Skipping update.",
+                        item_info.name,
+                        cooldown_info.format_remaining()
+                    ));
+                } else {
+                    return Err(e
+                        .with_location(get_location!())
+                        .with_context(entry.to_json()));
+                }
             }
         }
 

@@ -82,6 +82,23 @@ export namespace TauriTypes {
     amber_stars?: number;
     cyan_stars?: number;
   }
+  export interface RustDuration {
+    nanos: number;
+    secs: number;
+  }
+  export interface SubType {
+    rank?: number;
+    variant?: string;
+    amber_stars?: number;
+    cyan_stars?: number;
+  }
+  export interface CoolDownInfo {
+    id: string;
+    duration: RustDuration;
+    cooldown_type: string;
+    start_time: Date;
+    end_time: Date;
+  }
 
   //--------------------------------------------------------------------------------
   //  Settings
@@ -465,6 +482,7 @@ export namespace TauriTypes {
     max_price?: number;
     min_profit?: number;
     min_sma?: number;
+    cooldown?: CoolDownInfo;
     [key: string]: any;
   }
   export interface StockEntryBase<T = any> {
