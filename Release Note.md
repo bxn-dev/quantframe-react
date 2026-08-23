@@ -11,6 +11,7 @@
 - 🛠️ Fixed a crash ("unexpected value for StockStatus enum") caused by stale status values in the database (e.g. `cooldown_price_change`); the stock status now falls back to `Unknown` instead of erroring.
 - 🛠️ Fixed `nullify_zeroed_properties` erroring on non-numeric properties by supporting `f64`, `i64`, `i32`, `u64`, `String`, and array types instead of assuming everything is a float.
 - 🛠️ Fixed syndicate items failing to post when the standing check errored; the check now degrades gracefully instead of aborting the pipeline.
+- 🛠️ Fixed the users activity linking to to thw wrong endpoint
 
 ## Refactors
 

@@ -31,7 +31,7 @@ impl MarketRoute {
             .as_ref()
             .call_api::<Value>(
                 Method::GET,
-                &format!("/wfm/users_active_history?{}", query.get_query()),
+                &format!("/market/users/activity?{}", query.get_query()),
                 None,
                 None,
                 ResponseFormat::Json,
